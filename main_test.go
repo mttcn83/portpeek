@@ -222,6 +222,11 @@ func TestJSON(t *testing.T) {
 }
 
 func TestOpenVsLocalAndIPv6(t *testing.T) {
+	if l, err := net.Listen("tcp6", "[::1]:0"); err != nil {
+		t.Skipf("IPv6 loopback unavailable: %v", err)
+	} else {
+		l.Close()
+	}
 	_, openPort := spawn(t, "0.0.0.0", "normal", "")
 	_, v6Port := spawn(t, "::1", "normal", "")
 	out := pp(t).out
