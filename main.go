@@ -31,6 +31,7 @@ const usageText = `usage: portpeek [options] [list]
        portpeek [options] PORT
        portpeek [options] kill PORT
        portpeek [options] free [PORT]
+       portpeek [options] wait PORT [--free] [--timeout DURATION]
 `
 
 const helpText = usageText + `
@@ -43,7 +44,14 @@ commands:
   free [PORT]    print the first port >= PORT (default 3000) that is free
                  for localhost, handy in scripts: vite --port $(portpeek free)
 
+  wait PORT      block until something listens on PORT (--free: until it is
+                 released). Exit 0 when reached, 1 on timeout.
+                 e.g. portpeek wait 5432 && ./migrate
+
 options:
+  --free         wait: wait for the port to be released instead
+  -t, --timeout DURATION
+                 wait: give up after DURATION, e.g. 30s, 2m (default 60s; 0 = never)
   -h, --help     show this help message and exit
   -u, --udp      include UDP sockets in the listing
   --json         JSON output (list, PORT and free)
@@ -56,6 +64,7 @@ examples:
   portpeek 3000            who has port 3000?
   portpeek kill 3000       stop it (SIGTERM, asks first; -f if it won't die)
   portpeek free 8000       a free port, starting the search at 8000
+  portpeek wait 3000 -t 20s   block until a dev server is up on 3000
   portpeek --json | jq     machine-readable listing
 
 exit status: 0 ok, 1 nothing found or kill failed, 2 usage error, 3 permission denied
@@ -65,6 +74,8 @@ Only processes you can inspect show an owner; use sudo to see everyone's.
 type options struct {
 	udp, json, yes, force bool
 	words                 []string
+	free                  bool          // wait: until released
+	timeout               time.Duration // wait
 }
 
 func usageError(msg string) int {
@@ -76,8 +87,26 @@ func usageError(msg string) int {
 
 // parseArgs accepts options anywhere, like `portpeek kill -y 3000`.
 func parseArgs(args []string) (o options, done bool, code int) {
-	for i, a := range args {
+	o.timeout = defaultWaitTimeout
+	for i := 0; i < len(args); i++ {
+		a := args[i]
 		switch {
+		case a == "--free":
+			o.free = true
+		case a == "-t" || a == "--timeout" || strings.HasPrefix(a, "--timeout="):
+			v, hasV := strings.CutPrefix(a, "--timeout=")
+			if !hasV {
+				if i+1 >= len(args) {
+					return o, true, usageError(a + " needs a duration, e.g. 30s")
+				}
+				i++
+				v = args[i]
+			}
+			d, err := parseTimeout(v)
+			if err != nil {
+				return o, true, usageError(fmt.Sprintf("'%s' is not a duration like 30s, 2m or 0", v))
+			}
+			o.timeout = d
 		case a == "--":
 			o.words = append(o.words, args[i+1:]...)
 			return o, false, 0
@@ -360,6 +389,15 @@ func run(args []string) int {
 			start = n
 		}
 		return cmdFree(start, o, t)
+	case w[0] == "wait":
+		if len(w) != 2 {
+			return usageError("wait needs exactly one PORT, e.g. portpeek wait 3000")
+		}
+		port, ok := parsePort(w[1])
+		if !ok {
+			return usageError(fmt.Sprintf("'%s' is not a port number (1-65535)", w[1]))
+		}
+		return cmdWait(port, o, t)
 	case w[0] == "kill":
 		if len(w) != 2 {
 			return usageError("kill needs exactly one PORT, e.g. portpeek kill 3000")

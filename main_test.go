@@ -656,3 +656,49 @@ func TestBannerColorsAndFallbacks(t *testing.T) {
 		t.Errorf("a 74-column terminal should get the full banner, got %d rows", len(rows))
 	}
 }
+
+func TestWaitReturnsWhenListening(t *testing.T) {
+	_, port := listener(t)
+	r := pp(t, "wait", strconv.Itoa(port), "-t", "5s", "--json")
+	if r.code != 0 {
+		t.Fatalf("code %d: %s", r.code, r.err)
+	}
+	contains(t, r.out, `"reached": true`, `"state": "listening"`)
+}
+
+func TestWaitTimesOutOnQuietPort(t *testing.T) {
+	port := nextFree(41000)
+	start := time.Now()
+	r := pp(t, "wait", strconv.Itoa(port), "--timeout=300ms")
+	if r.code != exitFail || time.Since(start) > 3*time.Second {
+		t.Fatalf("code %d after %v", r.code, time.Since(start))
+	}
+	contains(t, r.err, "timed out")
+}
+
+func TestWaitFreeSeesRelease(t *testing.T) {
+	cmd, port := listener(t)
+	if r := pp(t, "wait", strconv.Itoa(port), "--free", "-t", "200ms"); r.code != exitFail {
+		t.Fatalf("held port reported free: %d", r.code)
+	}
+	go func() { time.Sleep(400 * time.Millisecond); cmd.Process.Kill() }()
+	if r := pp(t, "wait", strconv.Itoa(port), "--free", "-t", "5s"); r.code != 0 {
+		t.Fatalf("code %d: %s", r.code, r.err)
+	}
+}
+
+func TestWaitUsage(t *testing.T) {
+	for _, args := range [][]string{{"wait"}, {"wait", "abc"}, {"wait", "80", "-t", "soon"}, {"wait", "80", "-t"}, {"wait", "80", "-t", "-5s"}} {
+		if r := pp(t, args...); r.code != exitUsage {
+			t.Errorf("%v: code %d", args, r.code)
+		}
+	}
+}
+
+func TestParseTimeout(t *testing.T) {
+	for in, want := range map[string]time.Duration{"30": 30 * time.Second, "2m": 2 * time.Minute, "0": 0, "1.5": 1500 * time.Millisecond} {
+		if got, err := parseTimeout(in); err != nil || got != want {
+			t.Errorf("%s: %v %v", in, got, err)
+		}
+	}
+}
