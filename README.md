@@ -29,6 +29,8 @@ portpeek                 what's listening right now (add -u for UDP)
 portpeek 3000            who has port 3000? command, cwd, uptime, reach
 portpeek kill 3000       SIGTERM it, asks first (-y skips, -f sends SIGKILL)
 portpeek free [PORT]     print a port that's free for localhost (default: from 3000)
+portpeek wait 5432       block until something listens on 5432 (--free: until released;
+                         -t 30s timeout, default 60s, 0 = forever). Exit 0 reached, 1 timeout
 portpeek --json          machine-readable (also works with PORT)
 ```
 
