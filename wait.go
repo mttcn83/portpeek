@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"time"
@@ -17,13 +18,20 @@ const (
 // parseTimeout accepts Go durations ("30s", "2m"), a bare number of seconds
 // ("30"), and 0 for "wait forever". Negative values are rejected.
 func parseTimeout(s string) (time.Duration, error) {
-	if n, err := strconv.ParseFloat(s, 64); err == nil {
-		if n < 0 {
-			return 0, fmt.Errorf("negative")
-		}
-		return time.Duration(n * float64(time.Second)), nil
-	}
 	d, err := time.ParseDuration(s)
+	if n, ferr := strconv.ParseFloat(s, 64); ferr == nil {
+		// "nan", "inf" and values past time.Duration's range parse as floats
+		// but convert to garbage (in practice a non-positive duration, which
+		// would mean "wait forever"), so they are rejected here.
+		ns := n * float64(time.Second)
+		if math.IsNaN(ns) || ns < 0 || ns >= float64(math.MaxInt64) {
+			return 0, fmt.Errorf("out of range")
+		}
+		d, err = time.Duration(ns), nil
+		if n > 0 && d == 0 {
+			d = 1 // below a nanosecond: still a timeout, not "forever"
+		}
+	}
 	if err == nil && d < 0 {
 		err = fmt.Errorf("negative")
 	}
