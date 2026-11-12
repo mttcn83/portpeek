@@ -694,7 +694,7 @@ func TestWaitFreeSeesRelease(t *testing.T) {
 }
 
 func TestWaitUsage(t *testing.T) {
-	for _, args := range [][]string{{"wait"}, {"wait", "abc"}, {"wait", "80", "-t", "soon"}, {"wait", "80", "-t"}, {"wait", "80", "-t", "-5s"}} {
+	for _, args := range [][]string{{"wait"}, {"wait", "abc"}, {"wait", "80", "-t", "soon"}, {"wait", "80", "-t"}, {"wait", "80", "-t", "-5s"}, {"wait", "80", "-t", "nan"}, {"wait", "80", "-t", "inf"}, {"wait", "80", "--timeout=1e30"}} {
 		if r := pp(t, args...); r.code != exitUsage {
 			t.Errorf("%v: code %d", args, r.code)
 		}
@@ -706,5 +706,15 @@ func TestParseTimeout(t *testing.T) {
 		if got, err := parseTimeout(in); err != nil || got != want {
 			t.Errorf("%s: %v %v", in, got, err)
 		}
+	}
+	// These parse as floats but are not usable timeouts; accepting them used
+	// to turn into "wait forever".
+	for _, in := range []string{"nan", "inf", "+Inf", "-inf", "1e30", "-1", "-0.5s", "", "soon"} {
+		if got, err := parseTimeout(in); err == nil {
+			t.Errorf("%q accepted as %v", in, got)
+		}
+	}
+	if got, err := parseTimeout("0.0000000001"); err != nil || got <= 0 {
+		t.Errorf("a tiny positive timeout must stay a timeout, got %v %v", got, err)
 	}
 }
